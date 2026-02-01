@@ -1,0 +1,15 @@
+element-name, X, Y, Width, Height
+logo-header, 30, 30, 240, 60
+preset-selector, 570, 40, 200, 40
+engage-button, 320, 500, 160, 50
+knob-gain, 50, 180, 56, 56
+knob-drive, 50, 280, 56, 56
+knob-thresh, 120, 180, 56, 56
+knob-ratio, 120, 280, 56, 56
+knob-sub, 630, 180, 56, 56
+knob-punch, 630, 280, 56, 56
+knob-mix, 700, 180, 56, 56
+knob-output, 700, 280, 56, 56
+meter-in, 30, 380, 20, 180
+meter-sub, 750, 380, 20, 180
+visualizer, 250, 150, 300, 300

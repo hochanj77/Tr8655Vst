@@ -1,0 +1,788 @@
+================================================================================
+TR-8655 JUCE VST3 SAMPLER/INSTRUMENT BUILD PLAN
+================================================================================
+
+OVERVIEW:
+Build a JUCE VST3/AU instrument plugin (808/Bass Sampler) that matches the Figma design.
+This is a SAMPLER INSTRUMENT, not an effects plugin. It loads 808/Bass WAV samples
+and plays them via MIDI keyboard input.
+
+JUCE Location: C:\Users\hjbq1\OneDrive\Desktop\VST programming\JUCE
+Project Location: C:\Users\hjbq1\OneDrive\Desktop\VST programming\TR-8655 VST
+
+CORE FEATURES:
+- Load and play 808/Bass WAV samples via MIDI
+- Built-in preset samples (from 808 Sounds folder)
+- User can drag & drop custom WAV files
+- Pitch follows MIDI note (chromatic playback)
+- Effects chain: Gain, Drive, Sub, Compression, Punch, Mix, Output
+- Real-time visualizer and metering
+
+ASSETS LOCATION:
+- SVG/PNG Assets: TR-8655 SVG/
+- 808 Samples: 808 Sounds/808/
+- Bass Samples: 808 Sounds/Bass/
+- Visualizer References: TR-8655 SVG/visualizer-*.png
+
+================================================================================
+STEP 1: PROJECT SETUP - INSTRUMENT PLUGIN
+================================================================================
+
+Update CMakeLists.txt to create an INSTRUMENT plugin (not effect):
+
+juce_add_plugin(TR-8655
+    PLUGIN_MANUFACTURER_CODE Oasi
+    PLUGIN_CODE Tr86
+    FORMATS VST3 AU Standalone
+    PRODUCT_NAME "TR-8655"
+    IS_SYNTH TRUE                          # THIS IS A SYNTH/SAMPLER
+    NEEDS_MIDI_INPUT TRUE                  # RECEIVES MIDI
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+    COPY_PLUGIN_AFTER_BUILD TRUE
+)
+
+The plugin must report itself as an Instrument/Synth for DAWs to load it correctly
+on instrument tracks.
+
+================================================================================
+STEP 2: SAMPLER ENGINE ARCHITECTURE
+================================================================================
+
+Create src/SamplerEngine/SamplerEngine.h and SamplerEngine.cpp
+
+This is the core audio engine that handles sample playback.
+
+CLASS STRUCTURE:
+
+class SamplerVoice : public juce::SamplerVoice
+{
+    // Handles individual note playback
+    // Pitch shifting based on MIDI note vs root note
+    // ADSR envelope
+};
+
+class SamplerEngine
+{
+public:
+    void loadSample(const juce::File& wavFile);
+    void loadSampleFromMemory(const void* data, size_t size, const juce::String& name);
+    void noteOn(int midiNote, float velocity);
+    void noteOff(int midiNote);
+    void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages);
+    
+    void setRootNote(int note);  // Default C3 (60) - the "natural" pitch of the sample
+    int getRootNote() const;
+    
+    juce::String getCurrentSampleName() const;
+    bool hasSampleLoaded() const;
+    
+private:
+    juce::Synthesiser sampler;
+    juce::AudioFormatManager formatManager;
+    std::unique_ptr<juce::AudioBuffer<float>> sampleBuffer;
+    int rootNote = 60;  // C3
+    juce::String currentSampleName;
+};
+
+PITCH CALCULATION:
+When a MIDI note is played, calculate pitch ratio:
+    pitchRatio = pow(2.0, (midiNote - rootNote) / 12.0)
+    
+Example: If sample is C3 (60) and user plays C4 (72):
+    pitchRatio = pow(2.0, 12/12.0) = 2.0 (one octave up)
+
+Use juce::Synthesiser with juce::SamplerSound and juce::SamplerVoice for polyphonic playback.
+Support up to 8 voices for polyphony.
+
+================================================================================
+STEP 3: EMBEDDED PRESET SAMPLES
+================================================================================
+
+Create src/Presets/PresetSamples.h
+
+Embed the WAV files as binary resources or load from a known location.
+
+OPTION A - Binary Resources (recommended for distribution):
+Add to CMakeLists.txt:
+    juce_add_binary_data(TR8655_SampleData SOURCES
+        "808 Sounds/808/DEEP_SUB.wav"
+        "808 Sounds/808/CLOUD.wav"
+        "808 Sounds/808/DIGI.wav"
+        "808 Sounds/808/HOODTRAP.wav"
+        "808 Sounds/808/JERK.wav"
+        "808 Sounds/808/MINK.wav"
+        "808 Sounds/808/PLUGG.wav"
+        "808 Sounds/808/RAGE.wav"
+        "808 Sounds/Bass/808_MAFIA.wav"
+        "808 Sounds/Bass/REESE.wav"
+        "808 Sounds/Bass/SYNTH.wav"
+        "808 Sounds/Bass/ZAY.wav"
+    )
+
+OPTION B - Load from relative path (easier for development):
+Look for samples in:
+    - Plugin bundle resources folder
+    - User's Documents/TR-8655/Samples/
+    - Relative to plugin location
+
+PRESET DATA STRUCTURE:
+
+struct Preset {
+    juce::String name;
+    juce::String category;      // "808" or "Bass"
+    juce::String sampleName;    // WAV filename
+    int rootNote;               // MIDI root note (usually 36-48 for bass)
+    
+    // Effect parameters
+    float gain;
+    float drive;
+    float sub;
+    float punch;
+    float thresh;
+    float ratio;
+    float mix;
+    float output;
+};
+
+PRESET LIST:
+
+808 CATEGORY:
+1. DEEP SUB     - DEEP_SUB.wav,   rootNote=36, gain=45, drive=12, sub=80, punch=82, thresh=18, ratio=4, mix=100, output=0
+2. CLOUD        - CLOUD.wav,      rootNote=36, gain=40, drive=20, sub=75, punch=70, thresh=20, ratio=4, mix=100, output=0
+3. DIGI         - DIGI.wav,       rootNote=36, gain=50, drive=35, sub=60, punch=65, thresh=22, ratio=5, mix=100, output=0
+4. HOODTRAP     - HOODTRAP.wav,   rootNote=36, gain=48, drive=45, sub=85, punch=90, thresh=24, ratio=6, mix=100, output=0
+5. JERK         - JERK.wav,       rootNote=36, gain=42, drive=30, sub=70, punch=75, thresh=18, ratio=4, mix=100, output=0
+6. MINK         - MINK.wav,       rootNote=36, gain=38, drive=15, sub=78, punch=68, thresh=16, ratio=3, mix=100, output=0
+7. PLUGG        - PLUGG.wav,      rootNote=36, gain=55, drive=55, sub=65, punch=85, thresh=28, ratio=5, mix=100, output=0
+8. RAGE         - RAGE.wav,       rootNote=36, gain=60, drive=70, sub=90, punch=95, thresh=30, ratio=8, mix=100, output=0
+
+BASS CATEGORY:
+1. 808 MAFIA    - 808_MAFIA.wav,  rootNote=36, gain=52, drive=40, sub=82, punch=78, thresh=22, ratio=5, mix=100, output=0
+2. REESE        - REESE.wav,      rootNote=36, gain=45, drive=25, sub=75, punch=60, thresh=20, ratio=4, mix=100, output=0
+3. SYNTH        - SYNTH.wav,      rootNote=36, gain=40, drive=15, sub=65, punch=55, thresh=18, ratio=3, mix=100, output=0
+4. ZAY          - ZAY.wav,        rootNote=36, gain=48, drive=35, sub=80, punch=72, thresh=24, ratio=5, mix=100, output=0
+
+================================================================================
+STEP 4: DRAG & DROP CUSTOM SAMPLES
+================================================================================
+
+Implement drag & drop functionality in the PluginEditor.
+
+In PluginEditor, implement:
+- juce::FileDragAndDropTarget interface
+- juce::DragAndDropContainer (make editor a container)
+
+DRAG & DROP ZONE:
+Add a visual drop zone in the GUI (can be the visualizer area or a dedicated zone).
+
+class PluginEditor : public juce::AudioProcessorEditor,
+                     public juce::FileDragAndDropTarget,
+                     public juce::DragAndDropContainer
+{
+public:
+    bool isInterestedInFileDrag(const juce::StringArray& files) override
+    {
+        for (auto& file : files)
+            if (file.endsWithIgnoreCase(".wav") || file.endsWithIgnoreCase(".aiff"))
+                return true;
+        return false;
+    }
+    
+    void filesDropped(const juce::StringArray& files, int x, int y) override
+    {
+        if (files.size() > 0)
+        {
+            juce::File droppedFile(files[0]);
+            if (droppedFile.existsAsFile())
+            {
+                processor.loadCustomSample(droppedFile);
+                // Update UI to show "CUSTOM: filename"
+            }
+        }
+    }
+    
+    void fileDragEnter(const juce::StringArray& files, int x, int y) override
+    {
+        // Highlight drop zone
+        isFileDragOver = true;
+        repaint();
+    }
+    
+    void fileDragExit(const juce::StringArray& files) override
+    {
+        isFileDragOver = false;
+        repaint();
+    }
+    
+private:
+    bool isFileDragOver = false;
+};
+
+VISUAL FEEDBACK:
+When dragging a file over the plugin:
+- Show a subtle blue overlay on the visualizer
+- Display text: "DROP WAV FILE"
+- Border glow effect
+
+When custom sample is loaded:
+- Preset selector shows: "CUSTOM: [filename]"
+- User can still switch back to built-in presets
+
+================================================================================
+STEP 5: AUDIO PARAMETERS (Updated for Sampler)
+================================================================================
+
+Add these audio parameters using AudioProcessorValueTreeState:
+
+SAMPLER PARAMETERS:
+- rootNote (24-72, default 36, C1-C5 range) - root pitch of loaded sample
+
+EFFECT PARAMETERS:
+- gain (0-100, default 40, suffix "dB") - input gain before processing
+- drive (0-100, default 25, suffix "%") - saturation amount
+- sub (20-120, default 75, suffix "Hz") - sub bass enhancement frequency
+- punch (0-100, default 65, suffix "%") - transient punch amount
+- thresh (0-100, default 20, suffix "dB") - compressor threshold
+- ratio (1-20, default 4, suffix ":1") - compression ratio
+- mix (0-100, default 100, suffix "%") - wet/dry mix
+- output (-24 to +24, default 0, suffix "dB") - output level
+
+ADSR PARAMETERS (optional for v1):
+- attack (0-1000ms, default 1ms)
+- decay (0-2000ms, default 500ms)
+- sustain (0-100%, default 80%)
+- release (0-3000ms, default 200ms)
+
+================================================================================
+STEP 6: CUSTOM KNOB COMPONENT
+================================================================================
+
+Create src/Components/CustomKnob.h and CustomKnob.cpp
+
+USE SVG ASSETS from TR-8655 SVG/:
+- knob-large.svg (56x56px for main knobs)
+- knob-small.svg (40x40px for SUB, PUNCH)
+
+IMPLEMENTATION:
+Instead of painting layers with code, load the SVG and rotate it:
+
+class CustomKnob : public juce::Slider
+{
+public:
+    CustomKnob(const juce::String& svgPath);
+    void paint(juce::Graphics& g) override;
+    
+private:
+    std::unique_ptr<juce::Drawable> knobImage;
+    
+    void paint(juce::Graphics& g) override
+    {
+        auto bounds = getLocalBounds().toFloat();
+        
+        // Draw recessed background (still paint this)
+        // ...
+        
+        // Draw rotated SVG knob
+        if (knobImage)
+        {
+            float rotation = juce::jmap(getValue(), getMinimum(), getMaximum(), -135.0f, 135.0f);
+            
+            juce::AffineTransform transform = juce::AffineTransform::rotation(
+                juce::degreesToRadians(rotation),
+                bounds.getCentreX(),
+                bounds.getCentreY()
+            );
+            
+            knobImage->draw(g, 1.0f, transform);
+        }
+        
+        // Draw label and value below
+        // ...
+    }
+};
+
+LABEL AND VALUE DISPLAY (below knob):
+- Label: 9px bold uppercase, color #6b7280, letter-spacing wide
+- Value box: background #08080a, border 1px white/5%, rounded
+- Value text: 10px mono, color #60A5FA (blue-400)
+
+================================================================================
+STEP 7: VU METER COMPONENT
+================================================================================
+
+Create src/Components/VUMeter.h and VUMeter.cpp
+
+USE SVG ASSET (optional):
+- meter-in-empty.svg as background frame
+
+OR paint programmatically (32 LED segments):
+
+Specifications:
+- 32 horizontal segments stacked vertically
+- Segment size: 16px wide, 3px tall, 1.5px gap
+- Container: black/90% bg, 3px radius, 1px white/5% border
+
+Colors by zone:
+- Segments 0-19 (bottom): Green #10b981 (on) / #064e3b (off)
+- Segments 20-25: Amber #f59e0b (on) / #713f12 (off)
+- Segments 26-31 (top): Red #ef4444 (on) / #7f1d1d (off)
+
+Features:
+- Peak hold: stays at max for 1000ms then drops
+- Smooth ballistics (attack ~5ms, release ~300ms)
+
+Label: 7px mono bold uppercase, color #6b7280
+
+================================================================================
+STEP 8: VISUALIZER COMPONENT (Canvas-based Animation)
+================================================================================
+
+Create src/Components/Visualizer.h and Visualizer.cpp
+
+USE PNG ASSET:
+- visualizer-empty.png as the background sphere
+
+REFERENCE IMAGES (for wave style):
+- visualizer-ref-1.png (subtle wave)
+- visualizer-ref-2.png (intense wave)
+- visualizer-ref-3.png (medium wave)
+
+SIZE: 300x300 pixels
+
+IMPLEMENTATION:
+
+class Visualizer : public juce::Component, public juce::Timer
+{
+public:
+    void paint(juce::Graphics& g) override
+    {
+        auto bounds = getLocalBounds().toFloat();
+        
+        // 1. Draw background sphere PNG
+        if (backgroundImage.isValid())
+            g.drawImage(backgroundImage, bounds);
+        
+        // 2. Create circular clipping path
+        juce::Path clipPath;
+        clipPath.addEllipse(bounds.reduced(12));  // Inset from edge
+        g.reduceClipRegion(clipPath);
+        
+        // 3. Draw animated waves
+        drawWaves(g, bounds);
+    }
+    
+    void drawWaves(juce::Graphics& g, juce::Rectangle<float> bounds)
+    {
+        float centerY = bounds.getCentreY();
+        float width = bounds.getWidth();
+        
+        // Wave 1: Background blue wave
+        drawSineWave(g, bounds, 
+            juce::Colour(0x2542DD),  // Blue
+            4.0f,                     // Stroke width
+            0.6f,                     // Opacity
+            0.08f,                    // Frequency
+            0.5f,                     // Speed multiplier
+            20.0f * intensity);       // Amplitude
+        
+        // Wave 2: Secondary wave (reverse direction)
+        drawSineWave(g, bounds,
+            juce::Colour(0x3E36D4),
+            3.0f, 0.5f, 0.12f, -0.3f, 15.0f * intensity);
+        
+        // Wave 3: Main white center line
+        drawSineWave(g, bounds,
+            juce::Colours::white,
+            6.0f + bassIntensity * 12.0f,  // Thicker with bass
+            0.9f, 0.05f, 0.2f, 10.0f * intensity);
+        
+        // Wave 4: Foreground accent
+        drawSineWave(g, bounds,
+            juce::Colour(0x5B54DB),
+            2.0f, 0.4f, 0.15f, 0.8f, 30.0f * intensity);
+    }
+    
+    void drawSineWave(juce::Graphics& g, juce::Rectangle<float> bounds,
+                      juce::Colour color, float strokeWidth, float opacity,
+                      float frequency, float speed, float amplitude)
+    {
+        juce::Path wavePath;
+        float centerY = bounds.getCentreY();
+        float width = bounds.getWidth();
+        float padding = 20.0f;
+        
+        bool started = false;
+        for (float x = padding; x < width - padding; x += 2.0f)
+        {
+            // Normalized position (0-1)
+            float normalizedX = (x - padding) / (width - 2 * padding);
+            
+            // Edge fade (quadratic falloff at edges)
+            float edgeFade = 1.0f - std::pow(std::abs(normalizedX - 0.5f) * 2.0f, 2.0f);
+            
+            // Calculate Y with sine wave + time animation
+            float y = centerY + std::sin((x * frequency) + (time * speed)) 
+                              * amplitude * edgeFade;
+            
+            // Add low-frequency bass modulation
+            y += std::sin((x * 0.02f) + (time * 0.1f)) * bassIntensity * 20.0f * edgeFade;
+            
+            if (!started) {
+                wavePath.startNewSubPath(x, y);
+                started = true;
+            } else {
+                wavePath.lineTo(x, y);
+            }
+        }
+        
+        g.setColour(color.withAlpha(opacity));
+        g.strokePath(wavePath, juce::PathStrokeType(strokeWidth, 
+            juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    
+    void timerCallback() override
+    {
+        time += 0.05f;  // Increment time for animation
+        repaint();
+    }
+    
+    void setIntensity(float newIntensity) { intensity = newIntensity; }
+    void setBassIntensity(float newBass) { bassIntensity = newBass; }
+    
+private:
+    juce::Image backgroundImage;  // visualizer-empty.png
+    float time = 0.0f;
+    float intensity = 0.5f;       // 0-1, overall signal level
+    float bassIntensity = 0.5f;   // 0-1, low frequency energy
+};
+
+Start timer at 60fps: startTimerHz(60);
+
+================================================================================
+STEP 9: PRESET SELECTOR COMPONENT (Updated for Sampler)
+================================================================================
+
+Create src/Components/PresetSelector.h and PresetSelector.cpp
+
+USE SVG ASSETS:
+- arrow-left.svg
+- arrow-right.svg
+
+LAYOUT:
+- "PATCH MEMORY" label above
+- Left arrow | Preset Name Display | Right arrow
+- Dropdown on click
+
+PRESET CATEGORIES:
+
+808 Category:
+  - DEEP SUB
+  - CLOUD
+  - DIGI
+  - HOODTRAP
+  - JERK
+  - MINK
+  - PLUGG
+  - RAGE
+
+Bass Category:
+  - 808 MAFIA
+  - REESE
+  - SYNTH
+  - ZAY
+
+Custom Category (appears when user drops a WAV):
+  - CUSTOM: [filename]
+
+BEHAVIOR:
+When preset selected:
+1. Load the corresponding WAV sample into SamplerEngine
+2. Set root note from preset data
+3. Update all effect parameters via APVTS
+4. Update preset name display
+
+================================================================================
+STEP 10: SECTION ICONS
+================================================================================
+
+USE SVG ASSETS for section headers:
+- icon-signal.svg (✦ sparkle icon)
+- icon-dynamics.svg (≡ waves icon)
+- icon-equalizer.svg (ψ EQ icon)
+- icon-master.svg (◀▶ speaker icon)
+
+Load as juce::Drawable and display at 12x12px, tinted #3B82F6 (blue)
+
+================================================================================
+STEP 11: MAIN PLUGIN EDITOR GUI
+================================================================================
+
+Build complete PluginEditor layout.
+
+WINDOW: 900 x 600 pixels
+
+LOAD ASSETS from TR-8655 SVG/:
+- panel-background.svg (or paint gradient)
+- All icons and knob SVGs
+- visualizer-empty.png
+
+LAYOUT (same as before but now MIDI-aware):
+
+HEADER:
+- Logo: "TR-8655" with "OASIS CREATIVE LABS" subtitle
+- Preset Selector (center)
+- ENGAGE button (right) - now controls voice gate/mute
+
+LEFT PANEL:
+- SIGNAL section: Gain, Drive knobs
+- DYNAMICS section: Thresh, Ratio knobs
+
+CENTER PANEL:
+- IN meter (left) - shows input level when note plays
+- Visualizer (center) - responds to audio output
+- SUB meter (right) - shows low frequency content
+
+RIGHT PANEL:
+- EQUALIZER section: Sub, Punch knobs
+- MASTER section: Mix, Output knobs
+
+FOOTER STATUS BAR:
+- Sample rate indicator
+- Bit depth indicator
+- CPU meter
+- Current sample name display (new!)
+- MIDI activity indicator (new!)
+
+NEW: SAMPLE DROP ZONE
+- The visualizer area doubles as a drag & drop zone
+- Visual feedback when dragging WAV over it
+- Text overlay: "DROP WAV TO LOAD"
+
+NEW: MIDI INDICATOR
+- Small keyboard icon or LED that flashes on MIDI input
+- Shows last played note (e.g., "C3")
+
+================================================================================
+STEP 12: PLUGIN PROCESSOR - SAMPLER + EFFECTS
+================================================================================
+
+Update PluginProcessor for sampler functionality:
+
+class TR8655AudioProcessor : public juce::AudioProcessor
+{
+public:
+    // MIDI + Audio processing
+    void processBlock(juce::AudioBuffer<float>& buffer, 
+                      juce::MidiBuffer& midiMessages) override
+    {
+        buffer.clear();  // Start with silence (we're a synth)
+        
+        // 1. Process MIDI -> Generate raw sample audio
+        samplerEngine.processBlock(buffer, midiMessages);
+        
+        // 2. Apply effects chain to the generated audio
+        applyEffectsChain(buffer);
+        
+        // 3. Update meters
+        updateMeters(buffer);
+    }
+    
+    void applyEffectsChain(juce::AudioBuffer<float>& buffer)
+    {
+        // Same as before: gain -> drive -> sub -> compression -> punch -> mix -> output
+    }
+    
+    // Sample loading
+    void loadPreset(int presetIndex);
+    void loadCustomSample(const juce::File& wavFile);
+    
+    // Meter values (atomic for thread safety)
+    std::atomic<float> inputLevel { 0.0f };
+    std::atomic<float> outputLevel { 0.0f };
+    std::atomic<float> bassLevel { 0.0f };
+    std::atomic<int> lastMidiNote { -1 };
+    std::atomic<bool> midiActivity { false };
+    
+private:
+    SamplerEngine samplerEngine;
+    juce::AudioProcessorValueTreeState apvts;
+    
+    // DSP processors
+    juce::dsp::Gain<float> inputGain;
+    juce::dsp::WaveShaper<float> saturator;
+    // ... etc
+};
+
+IMPORTANT: 
+- acceptsMidi() must return TRUE
+- producesMidi() returns FALSE  
+- isMidiEffect() returns FALSE
+- This is a synth that responds to MIDI and outputs audio
+
+================================================================================
+STEP 13: DSP EFFECTS CHAIN
+================================================================================
+
+Implement effects processing (applied AFTER sampler generates audio):
+
+1. INPUT GAIN:
+   gainLinear = pow(10, (gain - 50) / 40.0)  // +/-25dB range
+
+2. SATURATION/DRIVE:
+   driveAmount = drive / 100.0
+   output = tanh(input * (1 + driveAmount * 4)) / tanh(1 + driveAmount * 4)
+
+3. SUB ENHANCEMENT:
+   Low shelf filter at 'sub' frequency (20-120 Hz)
+   Boost: +6dB to +12dB based on sub parameter
+
+4. COMPRESSION:
+   Threshold: thresh maps 0-100 to 0dB to -40dB
+   Ratio: 1:1 to 20:1
+   Attack: 1ms, Release: 100ms
+
+5. PUNCH (Transient Shaper):
+   Detect transients, apply short boost (10-20ms)
+   punch parameter: 0-100 maps to 0-6dB boost
+
+6. MIX:
+   output = dry * (1 - mix/100) + wet * (mix/100)
+
+7. OUTPUT GAIN:
+   outputLinear = pow(10, output / 20.0)  // -24 to +24 dB
+
+================================================================================
+STEP 14: WIRE UP GUI TO PROCESSOR
+================================================================================
+
+In PluginEditor:
+
+1. Create SliderAttachments for all knobs -> APVTS parameters
+
+2. Timer for meter/visualizer updates (60fps):
+   void timerCallback() override
+   {
+       // Update meters
+       inputMeter.setLevel(processor.inputLevel.load());
+       subMeter.setLevel(processor.bassLevel.load());
+       
+       // Update visualizer
+       visualizer.setIntensity(processor.outputLevel.load());
+       visualizer.setBassIntensity(processor.bassLevel.load());
+       
+       // Update MIDI indicator
+       if (processor.midiActivity.exchange(false))
+           flashMidiIndicator();
+   }
+
+3. Preset selector -> processor.loadPreset(index)
+
+4. Drag & drop -> processor.loadCustomSample(file)
+
+================================================================================
+STEP 15: STATE SAVE/RESTORE
+================================================================================
+
+Implement getStateInformation / setStateInformation:
+
+Save:
+- All APVTS parameter values
+- Current preset index OR custom sample path
+- If custom sample: embed the WAV data or save the file path
+
+Restore:
+- Restore APVTS parameters
+- Reload the correct sample (preset or custom)
+
+For custom samples, consider:
+- Save file path (user must keep file in place)
+- OR embed sample data in plugin state (larger preset files)
+
+================================================================================
+STEP 16: BUILD AND TEST
+================================================================================
+
+BUILD COMMANDS:
+
+Configure:
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+Build:
+cmake --build build --config Release
+
+OUTPUT:
+- VST3: build/TR-8655_artefacts/Release/VST3/TR-8655.vst3
+- AU: build/TR-8655_artefacts/Release/AU/TR-8655.component (macOS)
+- Standalone: build/TR-8655_artefacts/Release/Standalone/TR-8655.exe
+
+TESTING CHECKLIST:
+
+[ ] Plugin loads in DAW as INSTRUMENT (not effect)
+[ ] MIDI notes trigger sample playback
+[ ] Pitch follows MIDI note (chromatic)
+[ ] All 12 preset samples load correctly
+[ ] Preset selector cycles through presets
+[ ] Drag & drop WAV files works
+[ ] All 8 effect knobs respond
+[ ] Meters show activity on note play
+[ ] Visualizer animates with audio
+[ ] State save/restore works (close and reopen)
+[ ] CPU usage is reasonable
+[ ] No audio glitches or clicks
+
+DAW TESTING:
+- FL Studio: Add to channel rack as instrument
+- Ableton Live: Add to MIDI track
+- Logic Pro: Add as Software Instrument
+- Reaper: Add to track, set as VSTi
+
+================================================================================
+ASSET CHECKLIST (TR-8655 SVG/)
+================================================================================
+
+[✓] arrow-left.svg
+[✓] arrow-right.svg
+[✓] icon-signal.svg
+[✓] icon-dynamics.svg
+[✓] icon-equalizer.svg
+[✓] icon-master.svg
+[✓] icon-info.svg
+[✓] icon-settings.svg
+[✓] knob-large.svg
+[✓] knob-small.svg
+[✓] logo-tr8655.svg
+[✓] meter-in-empty.svg
+[✓] panel-background.svg
+[✓] visualizer-empty.png
+[✓] visualizer-ref-1.png
+[✓] visualizer-ref-2.png
+[✓] visualizer-ref-3.png
+[✓] visualizer-ring.svg
+[✓] engage-active.svg
+[✓] Finished Plugin reference.png
+
+================================================================================
+SAMPLE FILES (808 Sounds/)
+================================================================================
+
+808/:
+[✓] CLOUD.wav
+[✓] DEEP_SUB.wav
+[✓] DIGI.wav
+[✓] HOODTRAP.wav
+[✓] JERK.wav
+[✓] MINK.wav
+[✓] PLUGG.wav
+[✓] RAGE.wav
+
+Bass/:
+[✓] 808_MAFIA.wav
+[✓] REESE.wav
+[✓] SYNTH.wav
+[✓] ZAY.wav
+
+================================================================================
+END OF BUILD PLAN
+================================================================================

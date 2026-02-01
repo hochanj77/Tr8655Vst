@@ -1,0 +1,14 @@
+Build the TR-8655 VST3 plugin following CLAUDE_CODE_BUILD_PLAN.txt step by step.
+
+This is a SAMPLER/INSTRUMENT plugin (not an effect). It loads 808/Bass WAV samples and plays them via MIDI keyboard.
+
+Key info:
+- JUCE location: C:\Users\hjbq1\OneDrive\Desktop\VST programming\JUCE
+- Project location: C:\Users\hjbq1\OneDrive\Desktop\VST programming\TR-8655 VST
+- Assets: TR-8655 SVG/ folder (SVGs and PNGs for UI)
+- Samples: 808 Sounds/ folder (WAV files for presets)
+- Reference: "Finished Plugin reference.png" shows final look
+
+Execute all steps completely without asking questions. Make reasonable decisions and keep moving. Complete the entire build, then I will test and request adjustments.
+
+Use ultramodern C++, compact code. Reference the RalphWiggum plugin style at C:\Users\hjbq1\OneDrive\Desktop\VST programming\RalphWiggum for patterns.

@@ -1,0 +1,48 @@
+{
+  "Name": "TR-8655",
+  "Version": "1.0.0",
+  "Factory Info": {
+    "Vendor": "Oasis Creative Labs",
+    "URL": "",
+    "E-Mail": "",
+    "Flags": {
+      "Unicode": true,
+      "Classes Discardable": false,
+      "Component Non Discardable": false,
+    },
+  },
+  "Classes": [
+    {
+      "CID": "ABCDEF019182FAEB4F61736954723836",
+      "Category": "Audio Module Class",
+      "Name": "TR-8655",
+      "Vendor": "Oasis Creative Labs",
+      "Version": "1.0.0",
+      "SDKVersion": "VST 3.7.12",
+      "Sub Categories": [
+        "Instrument",
+        "Synth",
+      ],
+      "Class Flags": 2,
+      "Cardinality": 2147483647,
+      "Snapshots": [
+      ],
+    },
+    {
+      "CID": "ABCDEF011234ABCD4F61736954723836",
+      "Category": "Component Controller Class",
+      "Name": "TR-8655",
+      "Vendor": "Oasis Creative Labs",
+      "Version": "1.0.0",
+      "SDKVersion": "VST 3.7.12",
+      "Sub Categories": [
+        "Instrument",
+        "Synth",
+      ],
+      "Class Flags": 2,
+      "Cardinality": 2147483647,
+      "Snapshots": [
+      ],
+    },
+  ],
+}
